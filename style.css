@@ -1,0 +1,231 @@
+/* ==========================================
+   1. ESTILOS GERAIS E NAVEGAÇÃO POR ABAS
+   ========================================== */
+
+/* Fundo padrão suave */
+body {
+    background-color: #f8fafc;
+    color: #1e293b;
+}
+
+/* Container de Abas */
+.tab-container {
+    scrollbar-width: none; /* Firefox */
+}
+.tab-container::-webkit-scrollbar {
+    display: none; /* Chrome / Safari */
+}
+
+/* Botões das Abas */
+.tab-btn {
+    padding: 0.75rem 1.25rem;
+    font-weight: 600;
+    color: #94a3b8;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.tab-btn:hover {
+    color: #e2e8f0;
+}
+
+.tab-btn.active {
+    color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+
+/* Modal Backdrops */
+.modal {
+    backdrop-filter: blur(3px);
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* ==========================================
+   2. ANIMAÇÃO DE DITADO POR VOZ (MICROFONE)
+   ========================================== */
+
+@keyframes pulse-recording {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+        transform: scale(1.03);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        transform: scale(1);
+    }
+}
+
+/* Classe aplicada via JS ao gravar áudio */
+.recording-active {
+    animation: pulse-recording 1.2s infinite;
+    background-color: #dc2626 !important;
+}
+
+/* ==========================================
+   3. BOTÕES DE VISTOS (TABELA DE ATIVIDADES)
+   ========================================== */
+
+.btn-visto {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid #cbd5e1;
+    background-color: #f8fafc;
+    color: #475569;
+    transition: all 0.15s ease;
+}
+
+.btn-visto:hover {
+    background-color: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+.btn-visto.active {
+    background-color: #2563eb;
+    color: #ffffff;
+    border-color: #1d4ed8;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+}
+
+/* Grade explícita para o quadro de ocorrências */
+#tableOccurrences th,
+#tableOccurrences td {
+    border: 1px solid #e2e8f0;
+}
+
+#tableOccurrences tbody tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+/* Histórico: exclusão individual acessível e visível em telas de toque */
+#occListContainer li {
+    gap: 0.75rem;
+}
+
+#occListContainer button {
+    opacity: 1;
+    flex: 0 0 auto;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+    outline: 3px solid rgba(59, 130, 246, 0.45);
+    outline-offset: 2px;
+}
+
+/* ==========================================
+   4. BARRAS DE ROLAGEM DAS TABELAS
+   ========================================== */
+
+.overflow-x-auto::-webkit-scrollbar {
+    height: 8px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* ==========================================
+   5. REGRAS DE IMPRESSÃO (RELATÓRIO DISCIPLINAR)
+   ========================================== */
+
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 10mm;
+    }
+
+    /* Oculta toda a interface da aplicação */
+    body * {
+        visibility: hidden;
+    }
+
+    .no-print, header, main, .modal {
+        display: none !important;
+    }
+
+    /* Exibe exclusivamente a área de relatório */
+    #printArea, #printArea * {
+        visibility: visible;
+    }
+
+    #printArea {
+        display: block !important;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .print-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+    }
+
+    .print-table th, 
+    .print-table td {
+        border: 1px solid #333333 !important;
+        padding: 8px 12px;
+        text-align: left;
+        font-size: 12px;
+    }
+
+    .print-table th {
+        background-color: #f1f5f9 !important;
+        font-weight: bold;
+    }
+
+    .print-activities-table,
+    .print-grades-table {
+        font-size: 8px !important;
+        table-layout: auto;
+    }
+
+    .print-activities-table th,
+    .print-activities-table td,
+    .print-grades-table th,
+    .print-grades-table td {
+        padding: 3px 4px !important;
+        text-align: center !important;
+        word-break: break-word;
+    }
+
+    .print-activities-table th:first-child,
+    .print-activities-table td:first-child,
+    .print-grades-table th:first-child,
+    .print-grades-table td:first-child {
+        text-align: left !important;
+        min-width: 100px;
+    }
+}
