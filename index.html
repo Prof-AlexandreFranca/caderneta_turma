@@ -56,6 +56,9 @@
                 <select id="classSelector" class="bg-blue-700 text-white border border-blue-500 rounded px-3 py-1 outline-none focus:ring-2 focus:ring-white text-sm">
                     <option value="">Selecione a Turma...</option>
                 </select>
+                <button onclick="app.openEditClassModal()" class="bg-blue-700 hover:bg-blue-800 px-3 py-1 rounded text-sm flex items-center gap-1" title="Editar Alunos da Turma Atual">
+                    <i class="fa-solid fa-user-pen"></i> <span>Editar Alunos</span>
+                </button>
                 <button onclick="ui.openModal('modalClassManager')" class="bg-blue-700 hover:bg-blue-800 px-3 py-1 rounded text-sm flex items-center gap-1" title="Gerenciar Turmas">
                     <i class="fa-solid fa-cog"></i> <span>Turmas</span>
                 </button>
@@ -210,6 +213,24 @@
         </div>
     </div>
 
+    <!-- Modal Editar Alunos da Turma -->
+    <div id="modalEditClass" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 class="text-lg font-bold mb-4">Editar Alunos da Turma</h3>
+            <div class="mb-4">
+                <label class="block text-sm mb-1 font-medium">Nome da Turma</label>
+                <input type="text" id="editClassName" class="w-full border rounded p-2 mb-2 text-sm">
+                <label class="block text-xs mb-1 text-slate-500">Lista de Alunos (um por linha)</label>
+                <textarea id="editClassStudents" class="w-full border rounded p-2 h-48 text-sm" placeholder="1 ALAN GABRIEL DIAS&#10;2 ALINE MARTINS DOS SANTOS"></textarea>
+                <p class="text-xs text-amber-600 mt-1">💡 Você pode adicionar novos alunos no final ou corrigir nomes. Os lançamentos dos alunos existentes serão preservados.</p>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="ui.closeModal('modalEditClass')" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded text-sm">Cancelar</button>
+                <button onclick="app.updateCurrentClass()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700">Salvar Alterações</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Activity Manager -->
     <div id="modalActivityManager" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
@@ -236,6 +257,20 @@
     <div id="modalEvals" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-xl p-6">
             <h3 class="text-lg font-bold mb-4">Gerenciar Avaliações</h3>
+            
+            <!-- Copiar Modelo de Avaliações -->
+            <div class="mb-4 bg-blue-50 p-3 rounded-lg border border-blue-200 flex flex-col sm:flex-row items-center gap-2 justify-between">
+                <div class="w-full sm:w-auto flex-grow">
+                    <label class="block text-xs font-bold text-blue-900 mb-1">📋 Copiar modelo de outra turma:</label>
+                    <select id="copyEvalSourceClass" class="w-full border rounded p-1.5 text-xs bg-white">
+                        <option value="">Copiar de qual turma?...</option>
+                    </select>
+                </div>
+                <button onclick="app.copyEvalsFromOtherClass()" class="w-full sm:w-auto bg-blue-700 hover:bg-blue-800 text-white text-xs px-3 py-2 rounded font-semibold mt-2 sm:mt-4 transition-all">
+                    Copiar Estrutura
+                </button>
+            </div>
+
             <div class="grid grid-cols-2 gap-4 mb-2">
                 <div>
                     <label class="block text-xs mb-1">Nome</label>

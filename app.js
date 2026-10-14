@@ -193,6 +193,9 @@ const ui = {
         if(id === 'modalClassManager') {
             ui.renderClassListModal();
         }
+        if(id === 'modalEvals') {
+            app.populateCopyEvalSourceSelector();
+        }
         document.getElementById(id).classList.remove('hidden'); 
     },
     closeModal(id) { document.getElementById(id).classList.add('hidden'); },
@@ -343,6 +346,37 @@ const app = {
         document.getElementById('newClassStudents').value = '';
         ui.closeModal('modalClassManager');
     },
+
+    openEditClassModal() {
+        if(!state.currentClassId || !state.classes[state.currentClassId]) {
+            return alert("Selecione uma turma para editar.");
+        }
+        const cls = state.classes[state.currentClassId];
+        document.getElementById('editClassName').value = cls.nome;
+        document.getElementById('editClassStudents').value = cls.alunos.join('\n');
+        ui.openModal('modalEditClass');
+    },
+
+    updateCurrentClass() {
+        if(!state.currentClassId || !state.classes[state.currentClassId]) return;
+        const newName = document.getElementById('editClassName').value.trim();
+        const studentsRaw = document.getElementById('editClassStudents').value.trim();
+        
+        if(!newName) return alert("Digite o nome da turma.");
+        
+        let cls = state.classes[state.currentClassId];
+        cls.nome = newName;
+        cls.alunos = studentsRaw.split('\n').map(s => s.trim()).filter(s => s);
+        cls.updatedAt = Date.now();
+        
+        saveData();
+        ui.populateClassSelector();
+        ui.renderClassListModal();
+        this.refreshCurrentTab();
+        ui.closeModal('modalEditClass');
+        notifyUser("Turma e lista de alunos atualizadas com sucesso!");
+    },
+
     deleteCurrentClass() {
         if(!state.currentClassId) return alert("Selecione uma turma para excluir.");
         this.deleteClassById(state.currentClassId);
@@ -537,7 +571,8 @@ const app = {
         html += '</tr></thead><tbody>';
         cls.alunos.forEach(aluno => {
             const p = parseStudentName(aluno);
-            html += `<tr><td>${p.numero ? `\${p.numero} ` : ''}${p.nome}</td>`;
+            const nomeExibicao = p.numero ? `${p.numero} - ${p.nome}` : p.nome;
+            html += `<tr><td>${nomeExibicao}</td>`;
             cls.atividades.forEach(a => {
                 const value = cls.vistos[aluno]?.[a.id];
                 html += `<td>${value === 1 ? '+' : value === 0.5 ? '½' : value === 0 ? '-' : ''}</td>`;
@@ -654,7 +689,7 @@ const app = {
         setTimeout(() => document.getElementById('printArea').innerHTML = '', 1000);
     },
 
-    // --- MÓDULO DE NOTAS ---
+    // --- MÓDULO DE NOTAS & MODELOS DE AVALIAÇÃO ---
     saveEval() {
         const nome = document.getElementById('evalName').value.trim();
         const tipo = document.getElementById('evalType').value;
@@ -692,6 +727,57 @@ const app = {
         document.getElementById('evalsListTbody').innerHTML = html;
         ui.toggleEvalTargets();
     },
+
+    populateCopyEvalSourceSelector() {
+        const sel = document.getElementById('copyEvalSourceClass');
+        if(!sel) return;
+        sel.innerHTML = '<option value="">Copiar de qual turma?...</option>';
+        Object.keys(state.classes).forEach(id => {
+            if(id !== state.currentClassId) {
+                sel.innerHTML += `<option value="${id}">${state.classes[id].nome}</option>`;
+            }
+        });
+    },
+
+    copyEvalsFromOtherClass() {
+        if(!state.currentClassId) return alert("Selecione uma turma primeiro.");
+        const sourceId = document.getElementById('copyEvalSourceClass').value;
+        if(!sourceId || !state.classes[sourceId]) return alert("Selecione a turma de origem das avaliações.");
+
+        const sourceEvals = state.classes[sourceId].avaliacoes || [];
+        if(sourceEvals.length === 0) return alert("A turma selecionada não possui nenhuma avaliação configurada.");
+
+        let targetCls = state.classes[state.currentClassId];
+        if(targetCls.avaliacoes.length > 0) {
+            if(!confirm("Esta turma já possui avaliações. Deseja ADICIONAR as avaliações da outra turma à lista atual?")) return;
+        }
+
+        const idMapping = {};
+        sourceEvals.forEach(a => {
+            const newId = 'aval_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            idMapping[a.id] = newId;
+        });
+
+        sourceEvals.forEach(a => {
+            let newTargets = [];
+            if(a.targets && Array.isArray(a.targets)) {
+                newTargets = a.targets.map(oldId => idMapping[oldId] || oldId);
+            }
+            targetCls.avaliacoes.push({
+                id: idMapping[a.id],
+                nome: a.nome,
+                tipo: a.tipo,
+                valorMax: a.valorMax,
+                targets: newTargets
+            });
+        });
+
+        saveData();
+        this.renderEvalsList();
+        this.refreshCurrentTab();
+        notifyUser(`${sourceEvals.length} avaliação(ões) copiada(s) com sucesso!`);
+    },
+
     updateManualNota(aluno, avalId, input) {
         let val = parseFloat(input.value);
         let cls = state.classes[state.currentClassId];
@@ -708,7 +794,6 @@ const app = {
         let notas_calculadas = {};
         let notas_para_soma = {};
         
-        // 1. Calcula todas as notas normais para exibição e soma inicial
         cls.avaliacoes.forEach(aval => {
             if(aval.tipo === 'recuperacao') return;
             
@@ -738,13 +823,10 @@ const app = {
             }
             if(nota > aval.valorMax) nota = aval.valorMax;
             
-            // Guarda para exibição exata na tabela
             notas_calculadas[aval.id] = parseFloat(nota.toFixed(2));
-            // Copia para a estrutura interna de soma do total
             notas_para_soma[aval.id] = parseFloat(nota.toFixed(2));
         });
 
-        // 2. Aplica as regras de substituição por Recuperação exclusivamente na soma total
         let recs = cls.avaliacoes.filter(a => a.tipo === 'recuperacao');
         recs.forEach(rec => {
             let notaRec = (cls.notas_manuais[aluno] && cls.notas_manuais[aluno][rec.id]) || null;
@@ -759,8 +841,6 @@ const app = {
                 
                 if(notaRec > somaTargetsMax) notaRec = somaTargetsMax;
 
-                // Se a nota da recuperação for superior à soma das avaliações que ela substitui,
-                // ajusta os valores internos da soma sem alterar a exibição visual das avaliações originais.
                 if(notaRec > somaTargetsBase && rec.targets && rec.targets.length > 0) {
                     rec.targets.forEach(tId => {
                         notas_para_soma[tId] = 0;
@@ -771,7 +851,6 @@ const app = {
             }
         });
 
-        // 3. Calcula o total da Média Final usando notas_para_soma
         let somaFinal = 0;
         cls.avaliacoes.forEach(aval => {
             if(aval.tipo !== 'recuperacao') {
@@ -821,7 +900,7 @@ const app = {
         document.getElementById('tbodyGrades').innerHTML = tbody;
     },
 
-    printGrades() {
+ printGrades() {
         const cls = state.classes[state.currentClassId];
         if (!cls) return alert('Selecione uma turma primeiro.');
         let html = `<h1>Quadro de Notas</h1><p><strong>Turma:</strong> ${cls.nome}</p><table class="print-table print-grades-table"><thead><tr><th>Aluno</th>`;
@@ -830,7 +909,8 @@ const app = {
         cls.alunos.forEach(aluno => {
             const p = parseStudentName(aluno);
             const calcs = this.calcAlunoNotas(cls, aluno);
-            html += `<tr><td>${p.numero ? `\${p.numero} ` : ''}${p.nome}</td>`;
+            const nomeExibicao = p.numero ? `${p.numero} - ${p.nome}` : p.nome;
+            html += `<tr><td>${nomeExibicao}</td>`;
             cls.avaliacoes.forEach(a => {
                 let value = calcs.detalhe[a.id];
                 if (a.tipo === 'manual' || a.tipo === 'recuperacao') {
@@ -1255,7 +1335,7 @@ Exemplo:
             app.refreshCurrentTab();
             notifyUser(`${count} lançamento(s) aplicado(s) com sucesso.`);
         } else {
-            console.warn('Nenhum comando da IA foi applied:', commands);
+            console.warn('Nenhum comando da IA foi aplicado:', commands);
             notifyUser('A fala foi enviada, mas nenhum lançamento pôde ser aplicado. Mencione o aluno e a atividade ou avaliação.', 'error');
         }
     }
