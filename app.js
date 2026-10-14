@@ -951,17 +951,16 @@ const app = {
 };
 
 // ==========================================
-// 5. MÓDULO DE VOZ CONTEXTUAL & GEMINI AI
+// 5. MÓDULO DE VOZ CONTEXTUAL & GEMINI AI (MODO CONTÍNUO LIMPO)
 // ==========================================
 const voice = {
     recognition: null,
     activeMode: null, 
-    finalText: '',
-    isCancelled: false,
+    transcriptBuffer: '',
     isListening: false,
     isPaused: false,
-    preserveTextOnStart: false,
     isProcessing: false,
+    userStopped: false,
 
     init() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -972,11 +971,6 @@ const voice = {
             this.recognition.continuous = true;
             
             this.recognition.onstart = () => {
-                if (!this.isListening && !this.preserveTextOnStart) {
-                    this.finalText = '';
-                    this.isCancelled = false;
-                }
-                this.preserveTextOnStart = false;
                 this.isListening = true;
                 this.isProcessing = false;
                 document.getElementById('voiceStatusBar').classList.remove('hidden');
@@ -986,52 +980,60 @@ const voice = {
             };
             
             this.recognition.onresult = (event) => {
-                let interim = '';
-                let finalPart = '';
+                let currentInterim = '';
                 
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
-                        finalPart += event.results[i][0].transcript;
+                        this.transcriptBuffer += event.results[i][0].transcript + ' ';
                     } else {
-                        interim += event.results[i][0].transcript;
+                        currentInterim += event.results[i][0].transcript;
                     }
                 }
                 
-                this.finalText += finalPart;
-                document.getElementById('voiceStatusText').innerText = `Ouvindo: "${this.finalText + interim}"`;
+                const displayText = (this.transcriptBuffer + currentInterim).trim();
+                document.getElementById('voiceStatusText').innerText = `Ouvindo: "${displayText}"`;
             };
             
             this.recognition.onerror = (e) => {
-                if(e.error !== 'no-speech') {
-                    console.warn("Erro no microfone:", e.error);
+                if (e.error !== 'no-speech' && e.error !== 'aborted') {
+                    console.warn("Aviso no microfone:", e.error);
                 }
                 if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                    this.isListening = false;
-                    this.updateButtonLabel('Ditar por Voz');
-                    this.setPauseControls('Pausar', true);
+                    this.userStopped = true;
                     this.stopUI();
                 }
             };
             
             this.recognition.onend = () => {
-                if (this.isPaused) return;
-                if (this.isListening && !this.isCancelled) {
-                    setTimeout(() => {
-                        if (this.isListening && !this.isCancelled) {
-                            try { this.recognition.start(); } catch (e) {}
-                        }
-                    }, 120);
+                // Se o usuário NÃO clicou em "Encerrar fala" e não está pausado,
+                // reativa o microfone mantendo o histórico de frases limpo acumulado.
+                if (!this.userStopped && !this.isPaused && this.isListening) {
+                    try {
+                        this.recognition.start();
+                    } catch (e) {
+                        setTimeout(() => {
+                            if (!this.userStopped && !this.isPaused) {
+                                try { this.recognition.start(); } catch (err) {}
+                            }
+                        }, 200);
+                    }
                     return;
                 }
-                if (this.isCancelled) return;
 
-                const textToProcess = this.finalText.trim();
-                if (textToProcess && !this.isProcessing) {
-                    this.isProcessing = true;
-                    document.getElementById('voiceStatusText').innerText = `Processando IA: "${textToProcess}"... aguarde.`;
-                    this.processCommand(textToProcess);
-                } else if (!this.isProcessing) {
-                    this.stopUI();
+                // Quando o usuário clica para encerrar
+                if (this.userStopped) {
+                    this.isListening = false;
+                    this.updateButtonLabel('Ditar por Voz');
+                    this.setPauseControls('Pausar', true);
+
+                    const textToProcess = this.transcriptBuffer.trim();
+                    if (textToProcess && !this.isProcessing) {
+                        this.isProcessing = true;
+                        document.getElementById('voiceStatusText').innerText = `Processando IA: "${textToProcess}"... aguarde.`;
+                        this.processCommand(textToProcess);
+                    } else {
+                        this.stopUI();
+                    }
                 }
             };
         }
@@ -1044,11 +1046,11 @@ const voice = {
             return;
         }
         this.activeMode = mode;
+        this.transcriptBuffer = '';
+        this.userStopped = false;
+        this.isPaused = false;
+        
         if(this.recognition) {
-            this.isCancelled = false;
-            this.isPaused = false;
-            this.preserveTextOnStart = false;
-            this.isListening = false;
             try { this.recognition.start(); } catch(e) {}
         } else {
             alert("O seu navegador não suporta a Web Speech API.");
@@ -1056,32 +1058,25 @@ const voice = {
     },
     
     stop() {
-        this.isCancelled = false;
-        this.isPaused = false;
-        this.preserveTextOnStart = false;
+        this.userStopped = true;
         this.isListening = false;
         if (this.recognition) {
             try { this.recognition.stop(); } catch(e) {}
         }
         this.updateButtonLabel('Ditar por Voz');
         this.setPauseControls('Pausar', true);
-        this.stopUI();
     },
 
     togglePause() {
         if (!this.recognition || !this.activeMode) return;
-        if (this.isListening) {
+        if (this.isListening && !this.isPaused) {
             this.isPaused = true;
-            this.isListening = false;
             try { this.recognition.stop(); } catch (e) {}
             this.setPauseControls('Retomar', false);
-            document.getElementById('voiceStatusText').innerText = `Pausado. Texto acumulado: "${this.finalText}"`;
-            return;
-        }
-        if (this.isPaused) {
+            document.getElementById('voiceStatusText').innerText = `Pausado. Texto acumulado: "${this.transcriptBuffer}"`;
+        } else if (this.isPaused) {
             this.isPaused = false;
-            this.preserveTextOnStart = true;
-            this.isListening = false;
+            this.userStopped = false;
             try { this.recognition.start(); } catch (e) {}
             this.setPauseControls('Pausar', false);
         }
@@ -1315,31 +1310,7 @@ Exemplo:
                 let avaliacao = cls.avaliacoes.find(a => a.id === cmd.avaliacao_id);
                 if (!avaliacao && evaluationLabel) {
                     const searchName = normalizeText(evaluationLabel);
-                    avaliacao = cls.avaliacoes.find(a => normalizeText(a.nome) === searchName);
-                    if (!avaliacao) {
-                        avaliacao = { id: 'aval_' + Date.now(), nome: String(evaluationLabel).trim(), tipo: 'manual', valorMax: Number(cmd.valor_max) || 10, targets: [] };
-                        cls.avaliacoes.push(avaliacao);
-                    }
-                }
-                if (!avaliacao || !['manual', 'recuperacao'].includes(avaliacao.tipo)) return;
-                const valor = Number(String(cmd.valor ?? cmd.nota ?? '').replace(',', '.'));
-                if (!Number.isFinite(valor) || valor < 0) return;
-                if(!cls.notas_manuais[alunoTarget]) cls.notas_manuais[alunoTarget] = {};
-                cls.notas_manuais[alunoTarget][avaliacao.id] = Math.min(valor, Number(avaliacao.valorMax) || 10);
-                count++;
-            }
-        });
-        
-        if(count > 0) {
-            saveData();
-            app.refreshCurrentTab();
-            notifyUser(`${count} lançamento(s) aplicado(s) com sucesso.`);
-        } else {
-            console.warn('Nenhum comando da IA foi aplicado:', commands);
-            notifyUser('A fala foi enviada, mas nenhum lançamento pôde ser aplicado. Mencione o aluno e a atividade ou avaliação.', 'error');
-        }
-    }
-};
+                    avaliacao = cls.avaliacoes.find
 
 // ==========================================
 // 6. INICIALIZAÇÃO DA APLICAÇÃO
