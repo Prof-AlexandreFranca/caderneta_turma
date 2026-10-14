@@ -98,7 +98,7 @@ function sanitizeClass(cls) {
     };
 }
 
-const storageKey = "caderneta_pro_state";
+const storageKey = "caderneta_pro_state_MEU";
 let geminiAvailableModels = null;
 
 function notifyUser(message, type = 'success') {
