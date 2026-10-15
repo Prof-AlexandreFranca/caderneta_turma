@@ -28,9 +28,13 @@ let state = {
     currentClassId: null
 };
 
+const storageKey = "caderneta_pro_state_MEU";
+let geminiAvailableModels = null;
+
+// --- FUNÇÕES UTILITÁRIAS DO SEU CÓDIGO ---
 function parseStudentName(alunoRaw) {
     alunoRaw = String(alunoRaw || '').trim();
-    const match = String(alunoRaw).trim().match(/^(\d+)\s*[-º°.]?\s*(.+)$/);
+    const match = String(alunoRaw).trim().match(/^(\d+)\s*[-º°.]?\s*(.+)\$/);
     if (match) {
         return { numero: match[1], nome: match[2].trim(), raw: alunoRaw };
     }
@@ -98,9 +102,6 @@ function sanitizeClass(cls) {
     };
 }
 
-const storageKey = "caderneta_pro_state_MEU";
-let geminiAvailableModels = null;
-
 function notifyUser(message, type = 'success') {
     let toast = document.getElementById('appToast');
     if (!toast) {
@@ -116,43 +117,90 @@ function notifyUser(message, type = 'success') {
     toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 4500);
 }
 
-async function loadData() {
-    let localClasses = {};
+// ==========================================
+// SINCRONIZAÇÃO EM TEMPO REAL (FIREBASE)
+// ==========================================
+
+// Monitora o estado do login do Firebase
+auth.onAuthStateChanged((user) => {
+    if (user) {
+        // Conectado: Ativa a escuta em tempo real no banco do Firebase
+        initRealtimeSync(user.uid);
+    } else {
+        // Desconectado: Usa o backup local
+        loadLocalFallback();
+    }
+});
+
+function getDatabaseRef(uid) {
+    return uid ? db.ref(`users/${uid}/turmas`) : db.ref('turmas');
+}
+
+function initRealtimeSync(uid) {
+    const userRef = getDatabaseRef(uid);
+
+    // .on('value') atualiza a tela automaticamente assim que houver alteração no PC ou Celular
+    userRef.on('value', (snapshot) => {
+        if (snapshot.exists()) {
+            const remoteClasses = snapshot.val() || {};
+            
+            state.classes = {};
+            Object.entries(remoteClasses).forEach(([id, cls]) => {
+                state.classes[id] = sanitizeClass(cls);
+            });
+
+            // Atualiza o backup no LocalStorage do aparelho
+            localStorage.setItem(storageKey, JSON.stringify(state.classes));
+
+            // Atualiza a interface da tela
+            if (typeof ui !== 'undefined') {
+                ui.populateClassSelector();
+                ui.renderClassListModal();
+                
+                if (state.currentClassId && state.classes[state.currentClassId]) {
+                    app.selectClass(state.currentClassId);
+                } else if (Object.keys(state.classes).length > 0) {
+                    app.selectClass(Object.keys(state.classes)[0]);
+                }
+            }
+        } else {
+            loadLocalFallback();
+            if (Object.keys(state.classes).length > 0) {
+                userRef.set(state.classes);
+            }
+        }
+    }, (error) => {
+        console.error("Erro de permissão/conexão no Firebase:", error);
+        notifyUser("Erro de sincronização com a nuvem.", "error");
+        loadLocalFallback();
+    });
+}
+
+function loadLocalFallback() {
     try {
         const local = localStorage.getItem(storageKey);
-        localClasses = local ? JSON.parse(local) : {};
-    } catch (error) {
-        console.warn("LocalStorage inválido; iniciando com dados remotos.", error);
-    }
-
-    try {
-        const snapshot = await db.ref('turmas').once('value');
-        const remoteClasses = snapshot.exists() ? (snapshot.val() || {}) : {};
-        state.classes = { ...remoteClasses };
-        Object.entries(localClasses).forEach(([id, localClass]) => {
-            const remoteClass = state.classes[id];
-            if (!remoteClass || (Number(localClass?.updatedAt) || 0) >= (Number(remoteClass?.updatedAt) || 0)) {
-                state.classes[id] = localClass;
-            }
-        });
-        for (const key in state.classes) state.classes[key] = sanitizeClass(state.classes[key]);
-        localStorage.setItem(storageKey, JSON.stringify(state.classes));
-        if (Object.keys(state.classes).length && JSON.stringify(remoteClasses) !== JSON.stringify(state.classes)) {
-            db.ref('turmas').set(state.classes).catch(e => console.warn("Firebase não sincronizado; dados locais preservados.", e));
+        state.classes = local ? JSON.parse(local) : {};
+        for (let key in state.classes) {
+            state.classes[key] = sanitizeClass(state.classes[key]);
         }
-    } catch (error) {
-        console.warn("Erro ao ler Firebase, utilizando fallback LocalStorage:", error);
-        state.classes = localClasses;
+    } catch (e) {
+        state.classes = {};
     }
-    
-    for (let key in state.classes) {
-        state.classes[key] = sanitizeClass(state.classes[key]);
+    if (typeof ui !== 'undefined') {
+        ui.populateClassSelector();
+        ui.renderClassListModal();
+        if (Object.keys(state.classes).length > 0 && !state.currentClassId) {
+            app.selectClass(Object.keys(state.classes)[0]);
+        }
     }
-    
-    ui.populateClassSelector();
-    ui.renderClassListModal();
-    if(Object.keys(state.classes).length > 0) {
-        app.selectClass(Object.keys(state.classes)[0]);
+}
+
+// Função alias caso algum botão do seu código ainda chame loadData() diretamente
+function loadData() {
+    if (auth.currentUser) {
+        initRealtimeSync(auth.currentUser.uid);
+    } else {
+        loadLocalFallback();
     }
 }
 
@@ -163,10 +211,22 @@ function saveData() {
             updatedAt: Date.now()
         };
     }
+
+    // 1. Salva imediatamente no dispositivo local
     localStorage.setItem(storageKey, JSON.stringify(state.classes));
-    try {
-        db.ref('turmas').set(state.classes).catch(e => console.warn("Firebase offline. Salvo localmente."));
-    } catch (e) {}
+
+    // 2. Transmite para a nuvem no Firebase
+    const user = auth.currentUser;
+    if (user) {
+        getDatabaseRef(user.uid).set(state.classes).catch((error) => {
+            console.error("Falha ao salvar no Firebase:", error);
+            notifyUser("Salvo apenas no dispositivo local.", "error");
+        });
+    } else {
+        db.ref('turmas').set(state.classes).catch((e) => {
+            console.warn("Firebase offline ou não autenticado.");
+        });
+    }
 }
 
 // ==========================================
