@@ -1,10 +1,9 @@
 // ==========================================
-// 1. CREDENCIAIS & CONFIGURAÇÕES
+// 1. CONFIGURAÇÕES PÚBLICAS DO CLIENTE
 // ==========================================
-const GEMINI_API_KEY_IN_CODE = "";
-let ACTIVE_GEMINI_KEY = "";
-
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+// A chave Gemini NÃO fica neste arquivo. A chamada passa pelo Worker.
+const GEMINI_WORKER_URL = "https://carteira-gemini.aleofranca.workers.dev";
+const ALLOWED_FIREBASE_UID = "rgWrsocucgVEqFn6TVHFUFt6hz32";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBunP6TZo7aZMSnCBUOBV3YHwdUpVw6pjM",
@@ -21,6 +20,7 @@ const firebaseConfig = {
 // 2. INICIALIZAÇÃO FIREBASE & ESTADO (STATE)
 // ==========================================
 firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
 const db = firebase.database();
 
 let state = {
@@ -250,50 +250,44 @@ const ui = {
 const app = {
     async authenticate(e) {
         if (e) e.preventDefault();
-        const pwdInput = document.getElementById('authPassword').value;
+        const email = document.getElementById('authEmail').value.trim();
+        const password = document.getElementById('authPassword').value;
         const btnSubmit = document.getElementById('btnAuthSubmit');
         const errEl = document.getElementById('authErrorMsg');
 
         errEl.classList.add('hidden');
         btnSubmit.disabled = true;
-        btnSubmit.innerText = "Verificando...";
+        btnSubmit.innerText = "Entrando...";
 
         try {
-            const snapshot = await db.ref('config').once('value');
-            const config = snapshot.val() || {};
-            
-            const passRemota = config.admin_password || "1234";
-            const geminiKey = config.gemini_key || "";
-
-            if (pwdInput === passRemota) {
-                ACTIVE_GEMINI_KEY = geminiKey;
-                sessionStorage.setItem('auth_passed', 'true');
-                sessionStorage.setItem('active_gemini_key', geminiKey);
-                document.getElementById('modalAuth').classList.add('hidden');
-                notifyUser("Sessão autenticada com sucesso.");
-            } else {
-                errEl.innerText = "Senha incorreta. Tente novamente.";
-                errEl.classList.remove('hidden');
+            const credential = await auth.signInWithEmailAndPassword(email, password);
+            if (credential.user.uid !== ALLOWED_FIREBASE_UID) {
+                await auth.signOut();
+                throw new Error("USER_NOT_ALLOWED");
             }
+            document.getElementById('modalAuth').classList.add('hidden');
+            notifyUser("Sessão autenticada com sucesso.");
+            await loadData();
         } catch (err) {
-            console.error(err);
-            errEl.innerText = "Erro ao conectar com servidor de autenticação.";
+            console.error('Falha no login Firebase:', err);
+            errEl.innerText = err.message === "USER_NOT_ALLOWED"
+                ? "Usuário não autorizado."
+                : "E-mail ou senha inválidos.";
             errEl.classList.remove('hidden');
         } finally {
             btnSubmit.disabled = false;
-            btnSubmit.innerText = "Desbloquear Sistema";
+            btnSubmit.innerText = "Entrar";
         }
     },
 
-    checkSession() {
-        const isAuth = sessionStorage.getItem('auth_passed');
-        const storedKey = sessionStorage.getItem('active_gemini_key');
-        if (isAuth === 'true' && storedKey) {
-            ACTIVE_GEMINI_KEY = storedKey;
+    async checkSession() {
+        const user = auth.currentUser;
+        if (user && user.uid === ALLOWED_FIREBASE_UID) {
             document.getElementById('modalAuth').classList.add('hidden');
-        } else {
-            document.getElementById('modalAuth').classList.remove('hidden');
+            return true;
         }
+        document.getElementById('modalAuth').classList.remove('hidden');
+        return false;
     },
 
     selectClass(id) {
@@ -1151,81 +1145,41 @@ Exemplo:
 ]`;
 
         try {
-            const apiKey = ACTIVE_GEMINI_KEY || GEMINI_API_KEY_IN_CODE;
-
-            if (!apiKey) {
-                app.checkSession();
-                throw new Error("Chave Gemini não autenticada. Faça o login na tela de bloqueio.");
+            const user = auth.currentUser;
+            if (!user || user.uid !== ALLOWED_FIREBASE_UID) {
+                throw new Error("Sessão Firebase inválida. Faça login novamente.");
             }
 
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
-                generationConfig: {
-                    temperature: 0.1,
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "ARRAY",
-                        items: {
-                            type: "OBJECT",
-                            properties: {
-                                acao: { type: "STRING" },
-                                aluno_raw: { type: "STRING" },
-                                atividade_id: { type: "STRING" },
-                                atividade_nome: { type: "STRING" },
-                                avaliacao_id: { type: "STRING" },
-                                avaliacao_nome: { type: "STRING" },
-                                valor: { type: "NUMBER" },
-                                descricao: { type: "STRING" }
-                            }
-                        }
-                    }
-                }
-            };
+            const idToken = await user.getIdToken();
+            const response = await fetch(GEMINI_WORKER_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${idToken}`
+                },
+                body: JSON.stringify({
+                    mode: this.activeMode,
+                    text: systemPrompt,
+                    alunos: alunosMapeados,
+                    atividades: cls.atividades,
+                    avaliacoes: cls.avaliacoes
+                })
+            });
 
-            let data = null;
-            let lastError = "";
-            let modelsToTry = [...GEMINI_MODELS];
-
+            const responseText = await response.text();
+            let data;
             try {
-                if (geminiAvailableModels === null) {
-                    const listResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}&pageSize=1000`);
-                    if (listResponse.ok) {
-                        const listed = await listResponse.json();
-                        geminiAvailableModels = (listed.models || [])
-                            .filter(model => (model.supportedGenerationMethods || []).includes('generateContent'))
-                            .map(model => model.baseModelId || model.name?.replace(/^models\//, ''))
-                            .filter(name => name && /gemini/i.test(name) && !/embedding|image|tts|robotics/i.test(name));
-                    } else {
-                        geminiAvailableModels = [];
-                    }
-                }
-                if (geminiAvailableModels.length) modelsToTry = [...new Set([...GEMINI_MODELS, ...geminiAvailableModels])];
-            } catch (listError) {
-                console.warn('Não foi possível listar os modelos Gemini; usando fallback local.', listError);
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (_) {
+                throw new Error("Resposta inválida do Worker.");
             }
-
-            for (const model of modelsToTry) {
-                const cleanModel = model.replace(/^models\//, '');
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cleanModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-                const response = await fetch(url, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                if (response.ok) {
-                    data = await response.json();
-                    break;
-                }
-                const detail = await response.text();
-                lastError = `Gemini ${cleanModel}: HTTP ${response.status} — ${detail.slice(0, 300)}`;
-                console.warn(lastError);
-                if (response.status === 400 || response.status === 401 || response.status === 403) break;
+            if (!response.ok) {
+                throw new Error(data?.error || `Worker respondeu HTTP ${response.status}.`);
             }
-            if (!data) throw new Error(lastError || "Nenhum modelo Gemini respondeu.");
 
             const aiText = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
             if (!aiText) throw new Error("Resposta vazia enviada pela inteligência artificial.");
-            console.log("Resposta da IA (JSON):", aiText);
+            console.log("Resposta da IA recebida pelo Worker.");
 
             let commands;
             try {
@@ -1310,7 +1264,37 @@ Exemplo:
                 let avaliacao = cls.avaliacoes.find(a => a.id === cmd.avaliacao_id);
                 if (!avaliacao && evaluationLabel) {
                     const searchName = normalizeText(evaluationLabel);
-                    avaliacao = cls.avaliacoes.find
+                    avaliacao = cls.avaliacoes.find(a => normalizeText(a.nome) === searchName);
+                    if (!avaliacao) {
+                        avaliacao = {
+                            id: 'aval_' + Date.now(),
+                            nome: String(evaluationLabel).trim(),
+                            tipo: 'manual',
+                            valorMax: Number(cmd.valor_max) || 10,
+                            targets: []
+                        };
+                        cls.avaliacoes.push(avaliacao);
+                    }
+                }
+                if (!avaliacao || !['manual', 'recuperacao'].includes(avaliacao.tipo)) return;
+                const valor = Number(String(cmd.valor ?? cmd.nota ?? '').replace(',', '.'));
+                if (!Number.isFinite(valor) || valor < 0) return;
+                if (!cls.notas_manuais[alunoTarget]) cls.notas_manuais[alunoTarget] = {};
+                cls.notas_manuais[alunoTarget][avaliacao.id] = Math.min(valor, Number(avaliacao.valorMax) || 10);
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            saveData();
+            app.refreshCurrentTab();
+            notifyUser(`${count} lançamento(s) aplicado(s) com sucesso.`);
+        } else {
+            console.warn('Nenhum comando da IA foi aplicado:', commands);
+            notifyUser('A fala foi enviada, mas nenhum lançamento pôde ser aplicado. Mencione o aluno e a atividade ou avaliação.', 'error');
+        }
+    }
+};
 
 // ==========================================
 // 6. INICIALIZAÇÃO DA APLICAÇÃO
@@ -1318,6 +1302,15 @@ Exemplo:
 window.onload = async () => {
     ui.init();
     voice.init();
-    app.checkSession();
-    await loadData();
+    document.getElementById('modalAuth').classList.remove('hidden');
+
+    auth.onAuthStateChanged(async (user) => {
+        if (user && user.uid === ALLOWED_FIREBASE_UID) {
+            document.getElementById('modalAuth').classList.add('hidden');
+            await loadData();
+        } else {
+            if (user) await auth.signOut();
+            document.getElementById('modalAuth').classList.remove('hidden');
+        }
+    });
 };

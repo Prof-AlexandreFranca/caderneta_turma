@@ -21,28 +21,27 @@
     
     <!-- Firebase Compat SDK (v10) -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-database-compat.js"></script>
 </head>
 <body class="bg-[#F8FAFC] text-slate-800 font-sans min-h-screen flex flex-col">
 
-    <!-- Modal de Autenticação / Login por Senha -->
+    <!-- Modal de Autenticação Firebase -->
     <div id="modalAuth" class="fixed inset-0 bg-slate-900 bg-opacity-90 flex items-center justify-center z-[200] p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
                 <i class="fa-solid fa-lock"></i>
             </div>
             <h3 class="text-xl font-bold text-slate-800 mb-1">Acesso Restrito</h3>
-            <p class="text-xs text-slate-500 mb-6">Digite a sua senha mestra para liberar a Caderneta e os recursos de IA por Voz.</p>
-            
+            <p class="text-xs text-slate-500 mb-6">Entre com seu e-mail e senha do Firebase para acessar a Caderneta e os recursos de IA por voz.</p>
             <form onsubmit="app.authenticate(event)" class="space-y-4">
-                <div>
-                    <input type="password" id="authPassword" placeholder="Sua senha..." class="w-full border border-slate-300 rounded-lg p-3 text-center text-sm outline-none focus:ring-2 focus:ring-blue-500 font-semibold" required>
-                </div>
+                <input type="email" id="authEmail" placeholder="Seu e-mail" autocomplete="username" class="w-full border border-slate-300 rounded-lg p-3 text-center text-sm outline-none focus:ring-2 focus:ring-blue-500 font-semibold" required>
+                <input type="password" id="authPassword" placeholder="Sua senha" autocomplete="current-password" class="w-full border border-slate-300 rounded-lg p-3 text-center text-sm outline-none focus:ring-2 focus:ring-blue-500 font-semibold" required>
                 <button type="submit" id="btnAuthSubmit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg py-3 text-sm transition-all shadow-md">
-                    Desbloquear Sistema
+                    Entrar
                 </button>
             </form>
-            <p id="authErrorMsg" class="text-xs text-red-600 font-semibold mt-3 hidden"></p>
+            <p id="authErrorMsg" class="text-xs text-red-600 font-semibold mt-3 hidden" role="alert"></p>
         </div>
     </div>
 
